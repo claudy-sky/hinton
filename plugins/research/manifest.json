@@ -1,0 +1,7 @@
+{
+  "name": "research",
+  "version": "1.0.0",
+  "enabled": true,
+  "tools": ["web_search", "web_fetch", "academic_search", "deep_research"],
+  "permissions": ["network"]
+}

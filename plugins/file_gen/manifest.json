@@ -1,0 +1,7 @@
+{
+  "name": "file_gen",
+  "version": "1.0.0",
+  "enabled": true,
+  "tools": ["create_pptx", "create_docx", "create_xlsx", "create_pdf"],
+  "permissions": ["filesystem"]
+}

@@ -1,0 +1,25 @@
+# Runtime data + weights (large / machine-local)
+/models/
+/data/
+# Vendored rendering libs (re-fetch with scripts/fetch_vendor.py)
+/frontend/vendor/
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+# Build artifacts (PyInstaller)
+/dist/
+/build/
+# Bundled binaries + model weights (machine-local, large)
+/bin/
+*.gguf
+*.exe
+*.dll
+*.zip
+# Throwaway verification scripts
+scripts/_*.py
+# OS / editor
+.DS_Store
+Thumbs.db
+*.log

@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Hinton</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;450;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<!-- ===================== Top bar ===================== -->
+<header id="topbar">
+  <div class="brand">
+    <span class="brand-dot"></span>
+    <span class="brand-mark">Hinton</span>
+  </div>
+  <nav class="tabs" id="mode-tabs">
+    <button class="tab active" data-mode="chat"><span class="ic" data-icon="message"></span><span>Chat</span></button>
+    <button class="tab" data-mode="notebook"><span class="ic" data-icon="book"></span><span>Notebook</span></button>
+    <button class="tab" data-mode="code"><span class="ic" data-icon="code"></span><span>Code</span></button>
+  </nav>
+  <div class="topbar-right">
+    <button id="model-pill" class="model-pill" title="Switch model">
+      <span class="dot" id="model-dot"></span>
+      <span id="model-label">Loading…</span>
+    </button>
+    <button id="theme-btn" class="icon-btn" title="Toggle theme"><span class="ic" data-icon="moon"></span></button>
+    <button id="settings-btn" class="icon-btn" title="Settings"><span class="ic" data-icon="settings"></span></button>
+  </div>
+</header>
+
+<!-- ===================== Mode: Chat ===================== -->
+<main id="mode-chat" class="mode active">
+  <aside class="rail" id="chat-rail">
+    <button class="newbtn" data-new="chat"><span class="ic" data-icon="plus" data-size="16"></span> New chat</button>
+    <div class="rail-section-row">
+      <span class="rail-section-title">Projects</span>
+      <button class="icon-btn sm" id="chat-new-folder" title="New project / folder"><span class="ic" data-icon="folder-plus" data-size="16"></span></button>
+    </div>
+    <div class="folder-tree" id="chat-folders"></div>
+    <div class="search-wrap"><span class="ic" data-icon="search" data-size="15"></span><input class="search" type="text" placeholder="Search chats" data-search="chat" /></div>
+    <div class="list" id="chat-list"></div>
+  </aside>
+  <section class="center" id="chat-center">
+    <div class="thread-scroll"><div class="thread" id="chat-thread"></div></div>
+    <div class="composer-wrap">
+      <div class="status-line" id="chat-status"></div>
+      <div class="composer">
+        <textarea class="input" id="chat-input" rows="1" placeholder="Ask anything"></textarea>
+        <div class="composer-bar">
+          <div class="tools" id="chat-chips">
+            <button class="tool-add" id="chat-tool-add" title="Tools" aria-haspopup="true" aria-expanded="false"><span class="ic" data-icon="plus" data-size="18"></span></button>
+            <div class="tool-pill-slot" id="chat-tool-pill"></div>
+            <div class="tool-menu hidden" id="chat-tool-menu" role="menu">
+              <button class="tool-item" data-attach="chat" role="menuitem"><span class="ic" data-icon="paperclip" data-size="17"></span><span>Attach file</span></button>
+              <button class="tool-item" data-tool="web" role="menuitem"><span class="ic" data-icon="globe" data-size="17"></span><span>Web search</span></button>
+              <button class="tool-item" data-tool="deep" role="menuitem"><span class="ic" data-icon="flask" data-size="17"></span><span>Deep research</span></button>
+              <button class="tool-item" data-tool="academic" role="menuitem"><span class="ic" data-icon="academic" data-size="17"></span><span>Academic search</span></button>
+              <button class="tool-item" data-tool="image" role="menuitem"><span class="ic" data-icon="image" data-size="17"></span><span>Generate image</span></button>
+              <div class="tool-sep"></div>
+              <button class="tool-item" data-toggle="thinking" role="menuitemcheckbox"><span class="ic" data-icon="sparkles" data-size="17"></span><span>Thinking</span><span class="tool-check ic" data-icon="check" data-size="16"></span></button>
+            </div>
+          </div>
+          <button class="btn-send" id="chat-send" title="Send"><span class="ic" data-icon="arrow-up"></span></button>
+        </div>
+      </div>
+    </div>
+  </section>
+  <aside class="panel" id="chat-panel">
+    <div class="panel-head">
+      <span>Artifacts</span>
+      <button class="icon-btn sm" data-collapse="chat-panel"><span class="ic" data-icon="chevron-right" data-size="16"></span></button>
+    </div>
+    <div class="panel-body" id="chat-artifacts">
+      <div class="empty">Generated artifacts will appear here.</div>
+    </div>
+  </aside>
+</main>
+
+<!-- ===================== Mode: Notebook ===================== -->
+<main id="mode-notebook" class="mode">
+  <aside class="rail" id="nb-rail">
+    <select class="nb-select" id="nb-select"></select>
+    <button class="newbtn ghost" id="nb-new"><span class="ic" data-icon="plus" data-size="16"></span> New notebook</button>
+    <div class="rail-section-title">Sources</div>
+    <div class="list" id="nb-sources"></div>
+    <button class="newbtn ghost" id="nb-add-source"><span class="ic" data-icon="plus" data-size="16"></span> Add source</button>
+  </aside>
+  <section class="center" id="nb-center">
+    <div class="doc-viewer" id="nb-viewer">
+      <div class="empty">Select a source to view it here.</div>
+    </div>
+  </section>
+  <aside class="panel wide" id="nb-panel">
+    <div class="panel-split">
+      <div class="panel-sub" id="nb-ai">
+        <div class="panel-head"><span>AI · grounded in sources</span></div>
+        <div class="thread-scroll"><div class="thread small" id="nb-thread"></div></div>
+        <div class="composer-wrap tight">
+          <div class="status-line" id="nb-status"></div>
+          <div class="composer mini">
+            <textarea class="input" id="nb-input" rows="1" placeholder="Ask about this notebook"></textarea>
+            <button class="btn-send sm" id="nb-send"><span class="ic" data-icon="arrow-up" data-size="16"></span></button>
+          </div>
+        </div>
+      </div>
+      <div class="panel-sub" id="nb-gen">
+        <div class="panel-head"><span>Generate</span></div>
+        <div class="gen-chips">
+          <button class="chip" data-gen="summary"><span class="ic" data-icon="summary" data-size="15"></span> Summary</button>
+          <button class="chip" data-gen="quiz"><span class="ic" data-icon="list-check" data-size="15"></span> Quiz</button>
+          <button class="chip" data-gen="cards"><span class="ic" data-icon="cards" data-size="15"></span> Cards</button>
+          <button class="chip" data-gen="wrong"><span class="ic" data-icon="list-check" data-size="15"></span> Mistakes</button>
+          <button class="chip" data-gen="pptx"><span class="ic" data-icon="slides" data-size="15"></span> PPT</button>
+          <button class="chip" data-gen="docx"><span class="ic" data-icon="file-text" data-size="15"></span> DOC</button>
+          <button class="chip" data-gen="xlsx"><span class="ic" data-icon="sheet" data-size="15"></span> XLS</button>
+        </div>
+        <button class="btn-primary" id="nb-gen-pdf"><span class="ic" data-icon="download" data-size="16"></span> Generate PDF</button>
+        <div class="gen-out" id="nb-gen-out"></div>
+      </div>
+    </div>
+  </aside>
+</main>
+
+<!-- ===================== Mode: Code ===================== -->
+<main id="mode-code" class="mode">
+  <aside class="rail" id="code-rail">
+    <button class="newbtn" data-new="code"><span class="ic" data-icon="plus" data-size="16"></span> New session</button>
+    <div class="list" id="code-list"></div>
+  </aside>
+  <section class="center" id="code-center">
+    <div class="thread-scroll"><div class="thread" id="code-thread"></div></div>
+    <div class="composer-wrap">
+      <div class="status-line" id="code-status"></div>
+      <div class="composer">
+        <textarea class="input" id="code-input" rows="1" placeholder="Ask about your code"></textarea>
+        <div class="composer-bar">
+          <div></div>
+          <button class="btn-send" id="code-send"><span class="ic" data-icon="arrow-up"></span></button>
+        </div>
+      </div>
+    </div>
+  </section>
+  <aside class="panel widest" id="code-panel">
+    <div class="panel-head editor-head">
+      <select id="code-lang">
+        <option value="python">Python</option>
+        <option value="javascript">JavaScript</option>
+        <option value="c">C</option>
+        <option value="cpp">C++</option>
+        <option value="html">HTML</option>
+      </select>
+      <div class="spacer"></div>
+      <button class="btn-secondary sm" id="code-discuss" title="Discuss this code in Chat"><span class="ic" data-icon="message" data-size="15"></span> Discuss in Chat</button>
+      <button class="btn-run" id="code-run"><span class="ic" data-icon="play" data-size="15"></span> Run</button>
+      <button class="icon-btn sm" id="code-save" title="Save"><span class="ic" data-icon="download" data-size="17"></span></button>
+    </div>
+    <div class="editor-wrap"><textarea id="code-editor"></textarea></div>
+    <div class="output-head">Output</div>
+    <div class="code-output" id="code-output"><div class="empty">Run results will appear here.</div></div>
+  </aside>
+</main>
+
+<!-- ===================== Settings modal ===================== -->
+<div id="settings-modal" class="modal hidden">
+  <div class="modal-card">
+    <div class="modal-head"><span>Settings</span><button class="icon-btn sm" id="settings-close"><span class="ic" data-icon="x" data-size="18"></span></button></div>
+    <div class="modal-body" id="settings-body"></div>
+  </div>
+</div>
+
+<!-- ===================== Folder settings modal ===================== -->
+<div id="folder-modal" class="modal hidden">
+  <div class="modal-card">
+    <div class="modal-head">
+      <span>Project · <span id="folder-modal-title">Folder</span></span>
+      <button class="icon-btn sm" id="folder-modal-close"><span class="ic" data-icon="x" data-size="18"></span></button>
+    </div>
+    <div class="modal-body" id="folder-modal-body"></div>
+  </div>
+</div>
+
+<!-- ===================== Loading overlay ===================== -->
+<div id="loading" class="loading">
+  <div class="loading-card">
+    <div class="spinner"></div>
+    <div class="loading-title">Hinton</div>
+    <div class="loading-sub" id="loading-sub">Getting things ready…</div>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<!-- ===================== Vendor loader (offline-first, CDN fallback) ===================== -->
+<script>
+window.VENDOR_CSS = [
+  ["vendor/katex/katex.min.css", "https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"],
+  ["vendor/highlight/github-dark.min.css", "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/styles/github-dark.min.css"],
+  ["vendor/codemirror/codemirror.min.css", "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css"],
+  ["vendor/codemirror/material-darker.min.css", "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css"],
+];
+window.VENDOR_JS = [
+  ["vendor/markdown-it/markdown-it.min.js", "https://cdn.jsdelivr.net/npm/markdown-it@14.1.0/dist/markdown-it.min.js", () => window.markdownit],
+  ["vendor/katex/katex.min.js", "https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js", () => window.katex],
+  ["vendor/katex/auto-render.min.js", "https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js", () => window.renderMathInElement],
+  ["vendor/highlight/highlight.min.js", "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/highlight.min.js", () => window.hljs],
+  ["vendor/mermaid/mermaid.min.js", "https://cdn.jsdelivr.net/npm/mermaid@10.9.3/dist/mermaid.min.js", () => window.mermaid],
+  ["vendor/split/split.min.js", "https://cdn.jsdelivr.net/npm/split.js@1.6.5/dist/split.min.js", () => window.Split],
+  ["vendor/codemirror/codemirror.min.js", "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js", () => window.CodeMirror],
+  ["vendor/codemirror/python.min.js", "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js", null],
+  ["vendor/codemirror/clike.min.js", "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js", null],
+  ["vendor/codemirror/javascript.min.js", "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js", null],
+  ["vendor/pdfjs/pdf.min.js", "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js", () => window.pdfjsLib],
+];
+window.APP_JS = [
+  "components/icons.js",
+  "components/render.js",
+  "components/split_panels.js",
+  "components/folder_tree.js",
+  "components/editor.js",
+  "components/quiz.js",
+  "components/doc_viewer.js",
+  "modes/chat.js",
+  "modes/notebook.js",
+  "modes/code.js",
+  "app.js",
+];
+
+(function loadAll() {
+  function loadCss(local, cdn) {
+    return new Promise((res) => {
+      const l = document.createElement("link");
+      l.rel = "stylesheet"; l.href = local;
+      l.onload = () => res(true);
+      l.onerror = () => { l.href = cdn; res(false); };
+      document.head.appendChild(l);
+    });
+  }
+  function loadScript(src) {
+    return new Promise((res, rej) => {
+      const s = document.createElement("script");
+      s.src = src; s.async = false;
+      s.onload = () => res(true);
+      s.onerror = () => rej(new Error("load fail " + src));
+      document.head.appendChild(s);
+    });
+  }
+  async function loadJsWithFallback(local, cdn, check) {
+    try { await loadScript(local); } catch (e) { /* try cdn */ }
+    if (check && !check()) { try { await loadScript(cdn); } catch (e) {} }
+  }
+  (async () => {
+    window.VENDOR_CSS.forEach(([l, c]) => loadCss(l, c));
+    for (const [l, c, chk] of window.VENDOR_JS) await loadJsWithFallback(l, c, chk);
+    for (const f of window.APP_JS) { try { await loadScript(f); } catch (e) { console.error(e); } }
+    if (window.OpenLM && window.OpenLM.start) window.OpenLM.start();
+  })();
+})();
+</script>
+</body>
+</html>

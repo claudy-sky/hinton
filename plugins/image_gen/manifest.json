@@ -1,0 +1,7 @@
+{
+  "name": "image_gen",
+  "version": "1.0.0",
+  "enabled": false,
+  "tools": ["generate_image"],
+  "permissions": ["filesystem"]
+}

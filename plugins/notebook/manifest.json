@@ -1,0 +1,7 @@
+{
+  "name": "notebook",
+  "version": "1.0.0",
+  "enabled": true,
+  "tools": ["notebook_search", "generate_quiz", "generate_summary"],
+  "permissions": ["filesystem"]
+}

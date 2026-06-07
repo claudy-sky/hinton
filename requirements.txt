@@ -1,0 +1,39 @@
+# OpenLM for SASA — Python dependencies
+#
+# RECOMMENDED: Python 3.11 or 3.12.  On Python 3.14 several wheels (torch via
+# sentence-transformers, WeasyPrint's GTK stack) may not yet be available; the
+# app still BOOTS without them (features degrade gracefully and the harness has
+# a stdlib LLM client + hashing-embedding fallback), but for full functionality
+# use 3.11/3.12.
+#
+# The browser dev server + mock model need NOTHING beyond the standard library:
+#     OPENLM_MOCK=1 python -m harness.main --serve
+
+# --- Desktop GUI ---
+pywebview>=5.0
+
+# --- LLM client (optional: harness.llm_client is a stdlib fallback) ---
+openai>=1.40
+
+# --- Web search / research (plugins/research) ---
+requests
+beautifulsoup4
+trafilatura
+feedparser
+
+# --- File parsing + study-material generation (plugins/notebook, file_gen) ---
+PyMuPDF            # PDF text extraction (import name: fitz)
+python-docx        # DOCX read + generate
+openpyxl           # XLSX read + generate
+python-pptx        # PPTX generate
+weasyprint         # HTML -> PDF (needs GTK on Windows)
+
+# --- RAG embeddings (plugins/notebook) ---
+sentence-transformers
+numpy
+
+# --- Model download helper (scripts/download_models.py) ---
+huggingface_hub
+
+# --- Optional vector store (brute-force cosine is used by default) ---
+# chromadb

@@ -1,0 +1,7 @@
+{
+  "name": "code_exec",
+  "version": "1.0.0",
+  "enabled": true,
+  "tools": ["run_c", "run_cpp"],
+  "permissions": ["subprocess"]
+}
