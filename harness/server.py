@@ -31,7 +31,9 @@ def make_handler(api):
         server_version = "OpenLMDev/0.1"
 
         def log_message(self, fmt, *args):
-            log.debug("%s - %s", self.address_string(), fmt % args)
+            # INFO so the captured backend.log shows each request — useful for
+            # confirming the window navigated to the app (a GET / after boot).
+            log.info("%s - %s", self.address_string(), fmt % args)
 
         # -- helpers --
         def _json(self, obj, status=200):

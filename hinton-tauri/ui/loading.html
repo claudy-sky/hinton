@@ -47,12 +47,13 @@
           spin = document.getElementById("spin");
     let url = null;
 
-    async function call(method) {
-      const r = await fetch(url + "/api", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ method, args: [] })
-      });
-      return (await r.json()).result;
+    // Boot status comes through a Rust IPC command (boot_status), which does the
+    // HTTP call to the backend itself — the webview cannot fetch http://127.0.0.1
+    // cross-origin (CORS / private-network block), which would otherwise leave us
+    // stuck on "Starting…".
+    async function bootStatus() {
+      const raw = await invoke("boot_status");
+      return raw ? JSON.parse(raw).result : null;
     }
 
     function showDownload(s) {
@@ -64,12 +65,14 @@
                                 : "starting…";
     }
 
+    let noStatus = 0;
     async function poll() {
       try {
         if (!url) { url = await invoke("backend_url"); }
         if (url) {
-          const s = await call("get_boot_status");
+          const s = await bootStatus();
           if (s) {
+            noStatus = 0;
             if (s.phase === "ready") { window.location.replace(url); return; }
             else if (s.phase === "downloading") showDownload(s);
             else if (s.phase === "error") {
@@ -80,6 +83,10 @@
               spin.style.display = "block"; bar.style.display = "none"; pct.style.display = "none";
               sub.textContent = s.phase === "loading" ? "Loading the model…" : "Starting…";
             }
+          } else if (++noStatus > 60) {
+            // Server is up but boot status is unreachable — enter anyway so we
+            // can never get stuck; the app shows its own loading state.
+            window.location.replace(url); return;
           }
         }
       } catch (e) { /* backend not up yet */ }

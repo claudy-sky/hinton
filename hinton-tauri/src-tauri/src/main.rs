@@ -2,6 +2,7 @@
 // loads its URL in a native WebView2 window (replaces pywebview/PyInstaller GUI).
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::path::PathBuf;
 use std::process::{Child, Command};
@@ -21,6 +22,33 @@ struct Backend {
 #[tauri::command]
 fn backend_url(state: State<Backend>) -> Option<String> {
     state.url.lock().unwrap().clone()
+}
+
+/// Minimal blocking HTTP POST (stdlib only) used to proxy backend calls from the
+/// loading window via IPC, so it never has to fetch cross-origin from the
+/// webview (which the WebView2 sandbox blocks: CORS / private-network).
+fn http_post(base: &str, path: &str, body: &str) -> Option<String> {
+    let addr = base.trim_start_matches("http://").trim_start_matches("https://");
+    let mut stream = TcpStream::connect(addr).ok()?;
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+    let req = format!(
+        "POST {path} HTTP/1.1\r\nHost: {addr}\r\nContent-Type: application/json\r\n\
+         Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    stream.write_all(req.as_bytes()).ok()?;
+    let mut resp = Vec::new();
+    stream.read_to_end(&mut resp).ok()?;
+    let text = String::from_utf8_lossy(&resp);
+    text.find("\r\n\r\n").map(|i| text[i + 4..].to_string())
+}
+
+/// First-run boot/download status as a JSON string, proxied from the backend so
+/// the loading window can show real progress without a cross-origin fetch.
+#[tauri::command]
+fn boot_status(state: State<Backend>) -> Option<String> {
+    let url = state.url.lock().unwrap().clone()?;
+    http_post(&url, "/api", "{\"method\":\"get_boot_status\",\"args\":[]}")
 }
 
 fn free_port() -> u16 {
@@ -101,6 +129,15 @@ fn spawn_backend(root: &PathBuf, port: u16) -> std::io::Result<Child> {
     };
     cmd.env("OPENLM_DATA_DIR", &data_dir);
     cmd.env("OPENLM_MODELS_DIR", &models_dir);
+    // Capture the sidecar's stdout/stderr so startup issues are diagnosable
+    // (otherwise CREATE_NO_WINDOW discards them).
+    let _ = std::fs::create_dir_all(&data_dir);
+    if let Ok(f) = std::fs::File::create(data_dir.join("backend.log")) {
+        if let Ok(f2) = f.try_clone() {
+            cmd.stdout(std::process::Stdio::from(f));
+            cmd.stderr(std::process::Stdio::from(f2));
+        }
+    }
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -115,7 +152,7 @@ fn main() {
             child: Mutex::new(None),
             url: Mutex::new(None),
         })
-        .invoke_handler(tauri::generate_handler![backend_url])
+        .invoke_handler(tauri::generate_handler![backend_url, boot_status])
         .setup(|app| {
             let root = repo_root(app.handle());
             let port = free_port();
