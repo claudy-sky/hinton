@@ -33,12 +33,21 @@ def _has_webview() -> bool:
 
 
 def _boot_model() -> None:
+    log = logging.getLogger("openlm")
+    from . import boot
     try:
+        # First run: download the resident model (progress in boot.STATUS, which
+        # the loading window polls); no-op if already present or in mock mode.
+        boot.ensure_models()
+        # Re-resolve server args now that the weights are on disk.
+        config.SERVERS = config._build_servers()
+        boot.set_phase("loading", "Loading the model…")
         manager.start()
-        logging.getLogger("openlm").info(
-            "model ready: %s (mock=%s)", manager.active, config.MOCK_LLM)
+        boot.set_phase("ready", "Ready")
+        log.info("model ready: %s (mock=%s)", manager.active, config.MOCK_LLM)
     except Exception as e:  # noqa: BLE001
-        logging.getLogger("openlm").error("model failed to start: %s", e)
+        boot.set_phase("error", f"{e}")
+        log.error("model failed to start: %s", e)
 
 
 def main() -> None:

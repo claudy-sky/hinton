@@ -84,7 +84,23 @@ fn spawn_backend(root: &PathBuf, port: u16) -> std::io::Result<Child> {
     // Run the real model out of the box: portable profile + bundled binaries.
     cmd.env("OPENLM_MODEL_PROFILE", "generic");
     cmd.env("OPENLM_LLAMA_SERVER", root.join("bin").join("llama-server.exe"));
-    cmd.env("OPENLM_E4B_MODEL", root.join("models").join("gemma-4-E4B_q4_0-it.gguf"));
+    // Writable data/model dirs. The install dir (resource_dir) is read-only, so
+    // when the weights aren't shipped next to the app we point at
+    // %LOCALAPPDATA%\OpenLM — that's where the backend downloads the model on
+    // first run (with progress shown in the loading window). In dev / when the
+    // model is already beside the app, use that so we don't re-download.
+    let e4b = root.join("models").join("gemma-4-E4B_q4_0-it.gguf");
+    let (data_dir, models_dir) = if e4b.exists() {
+        (root.join("data"), root.join("models"))
+    } else {
+        let base = std::env::var("LOCALAPPDATA")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .unwrap_or_default();
+        let u = PathBuf::from(base).join("OpenLM");
+        (u.join("data"), u.join("models"))
+    };
+    cmd.env("OPENLM_DATA_DIR", &data_dir);
+    cmd.env("OPENLM_MODELS_DIR", &models_dir);
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;

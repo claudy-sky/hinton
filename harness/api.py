@@ -134,6 +134,11 @@ class Api:
         """Snapshot of the in-flight generation for the live status readout."""
         return dict(self._progress)
 
+    def get_boot_status(self) -> dict:
+        """First-run boot/download status, polled by the loading window."""
+        from . import boot
+        return boot.snapshot()
+
     def set_model(self, model_key: str) -> dict:
         """Manual escalation / descalation (spec §5.1)."""
         if model_key == config.B12:

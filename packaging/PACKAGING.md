@@ -23,16 +23,32 @@ python scripts\get_gemma.py --size g4-12b   # (optional) 12B escalation
 
 cd hinton-tauri\src-tauri
 cargo build --release                 # dev exe -> target\release\hinton.exe
-cargo tauri build                     # standalone NSIS installer (bundles
+cargo tauri build                     # standalone installer (bundles
                                       #   python-embed/ harness/ frontend/ bin/ plugins/)
 ```
 
 Run the dev build: `hinton-tauri\src-tauri\target\release\hinton.exe`.
+Installer output: `target\release\bundle\msi\Hinton_<ver>_x64_en-US.msi`
+(installs to Program Files + Start-Menu shortcut with the app icon).
 
-> **Model distribution:** `models/` is NOT bundled in the installer (the GGUFs are
-> 5–7 GB each; NSIS large-file limits + size). Ship the model alongside or fetch
-> it on first run into `%LOCALAPPDATA%\OpenLM\models`. Everything *else* needed to
-> run is inside the installer, so the app itself is self-contained.
+> **Installer target = MSI (WiX).** `bundle.targets` is `["msi"]`. NSIS would also
+> work but its toolchain is fetched from GitHub at build time, which is
+> unreliable on some networks (connection resets); WiX is cached locally, so MSI
+> builds offline-reliably. Switch to `["nsis"]` (or both) if you have a stable
+> GitHub connection.
+
+> **Icon:** `scripts/_makeicon.py` renders the 1024px source (`hinton-tauri/icon-src.png`,
+> rounded-square brand gradient + white "H"); `cargo tauri icon ../icon-src.png`
+> regenerates `src-tauri/icons/` (incl. `icon.ico` used by the exe + shortcut).
+
+> **Model distribution = first-run download.** `models/` is NOT bundled (the GGUFs
+> are 5–7 GB; installer size). On first launch the backend downloads the resident
+> E4B model into `%LOCALAPPDATA%\OpenLM\models` with a **progress window**
+> (`harness/boot.py` → `Api.get_boot_status` → `ui/loading.html`: the loading
+> screen shows a progress bar and only enters the app when the model is `ready`).
+> Everything else needed to run is in the installer, so the app is self-contained.
+> The Tauri shell points the backend at writable `%LOCALAPPDATA%\OpenLM\{data,models}`
+> because the install dir is read-only.
 
 ## How the Tauri shell works (`hinton-tauri/src-tauri/src/main.rs`)
 

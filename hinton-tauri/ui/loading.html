@@ -7,39 +7,82 @@
   html, body { height: 100%; margin: 0; background: #0f1011; color: #ececed;
     font-family: "Space Grotesk", system-ui, sans-serif; }
   .wrap { height: 100%; display: flex; align-items: center; justify-content: center; }
-  .card { text-align: center; }
-  .dot { width: 14px; height: 14px; border-radius: 5px; margin: 0 auto 16px;
-    background: linear-gradient(135deg, #7c8cff 0%, #45dfa4 130%); }
-  .spinner { width: 40px; height: 40px; border: 3px solid #202126;
+  .card { text-align: center; width: 320px; }
+  .logo { width: 56px; height: 56px; border-radius: 16px; margin: 0 auto 18px;
+    background: linear-gradient(135deg, #7c8cff 0%, #45dfa4 130%);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 30px; color: #0f1011; }
+  .spinner { width: 34px; height: 34px; border: 3px solid #202126;
     border-top-color: #7c8cff; border-radius: 50%; margin: 0 auto 16px;
     animation: spin .8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .title { font-size: 20px; font-weight: 600; }
-  .sub { color: #9a9aa3; font-size: 13px; margin-top: 6px; }
+  .sub { color: #9a9aa3; font-size: 13px; margin-top: 8px; min-height: 18px; }
+  .bar { display: none; height: 8px; border-radius: 6px; background: #202126;
+    margin: 18px 0 6px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; width: 0%;
+    background: linear-gradient(90deg, #7c8cff, #45dfa4); transition: width .25s; }
+  .pct { display: none; color: #6f6f78; font-size: 12px; }
 </style>
 </head>
 <body>
   <div class="wrap"><div class="card">
-    <div class="spinner"></div>
+    <div class="logo">H</div>
+    <div class="spinner" id="spin"></div>
     <div class="title">Hinton</div>
-    <div class="sub" id="sub">Starting the local model…</div>
+    <div class="sub" id="sub">Starting…</div>
+    <div class="bar" id="bar"><i id="fill"></i></div>
+    <div class="pct" id="pct"></div>
   </div></div>
   <script>
     async function invoke(cmd) {
-      // Tauri v2 exposes the API on window.__TAURI__ (withGlobalTauri).
       const t = window.__TAURI__;
       if (t && t.core && t.core.invoke) return t.core.invoke(cmd);
       if (t && t.invoke) return t.invoke(cmd);
       throw new Error("Tauri API unavailable");
     }
-    let tries = 0;
+    function fmtGB(b) { return (b / 1073741824).toFixed(2) + " GB"; }
+    const sub = document.getElementById("sub"), bar = document.getElementById("bar"),
+          fill = document.getElementById("fill"), pct = document.getElementById("pct"),
+          spin = document.getElementById("spin");
+    let url = null;
+
+    async function call(method) {
+      const r = await fetch(url + "/api", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ method, args: [] })
+      });
+      return (await r.json()).result;
+    }
+
+    function showDownload(s) {
+      spin.style.display = "none";
+      bar.style.display = "block"; pct.style.display = "block";
+      fill.style.width = (s.pct || 0) + "%";
+      sub.textContent = "Downloading the model (first run only)…";
+      pct.textContent = s.total ? `${fmtGB(s.downloaded)} / ${fmtGB(s.total)}  (${s.pct}%)`
+                                : "starting…";
+    }
+
     async function poll() {
       try {
-        const url = await invoke("backend_url");
-        if (url) { window.location.replace(url); return; }
-      } catch (e) { /* API not ready yet */ }
-      if (++tries === 25) document.getElementById("sub").textContent =
-        "Loading the model (first launch can take a moment)…";
+        if (!url) { url = await invoke("backend_url"); }
+        if (url) {
+          const s = await call("get_boot_status");
+          if (s) {
+            if (s.phase === "ready") { window.location.replace(url); return; }
+            else if (s.phase === "downloading") showDownload(s);
+            else if (s.phase === "error") {
+              spin.style.display = "none"; bar.style.display = "none";
+              sub.textContent = "Startup error: " + (s.message || "unknown");
+              return;
+            } else { // starting / loading
+              spin.style.display = "block"; bar.style.display = "none"; pct.style.display = "none";
+              sub.textContent = s.phase === "loading" ? "Loading the model…" : "Starting…";
+            }
+          }
+        }
+      } catch (e) { /* backend not up yet */ }
       setTimeout(poll, 350);
     }
     poll();
