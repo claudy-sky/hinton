@@ -140,6 +140,10 @@ class ModelManager:
                 with contextlib.suppress(Exception):
                     self._proc.kill()
             self._proc = None
+        if getattr(self, "_log_fh", None) is not None:
+            with contextlib.suppress(Exception):
+                self._log_fh.close()
+            self._log_fh = None
         if self._mock_httpd is not None:
             with contextlib.suppress(Exception):
                 self._mock_httpd.shutdown()
@@ -158,9 +162,16 @@ class ModelManager:
         args = [config.LLAMA_SERVER_BIN, *spec["args"],
                 "--host", config.SERVER_HOST, "--port", str(port)]
         env = {**os.environ, **config.SYCL_ENV}
-        self._proc = subprocess.Popen(
-            args, env=env,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # Capture llama-server's output so a model-server crash (Vulkan device
+        # lost, OOM, etc.) is diagnosable instead of a bare ConnectionResetError.
+        try:
+            self._log_fh = open(config.DATA_DIR / f"llama-server-{model_key}.log",
+                                "w", encoding="utf-8", errors="replace")
+            out = self._log_fh
+        except Exception:  # noqa: BLE001
+            self._log_fh = None
+            out = subprocess.DEVNULL
+        self._proc = subprocess.Popen(args, env=env, stdout=out, stderr=subprocess.STDOUT)
         self._port = port
         self._wait_ready(port, timeout=600)
 

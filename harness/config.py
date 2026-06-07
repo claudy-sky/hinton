@@ -155,17 +155,19 @@ _THREADS_BATCH = os.environ.get("OPENLM_THREADS_BATCH", str(_CPU_COUNT))
 # OPENLM_NGL to a number to pin layers (0 = pure CPU), or leave "auto".
 _NGL = os.environ.get("OPENLM_NGL", "auto").strip()
 
-# KV-cache quantization (q8_0 K / q4_0 V) shrinks the KV cache to ~3/8 of f16,
-# leaving more VRAM for context. It REQUIRES flash attention. Both are verified
-# to load fast (~9 s) and generate correctly on the bundled cross-vendor Vulkan
-# server (Intel/AMD/NVIDIA); flash attention is also fine on a pure-CPU build.
-# NOTE: this build needs the value form "-fa on" (bare "-fa" swallows the next
-# arg) and quantizing the V cache hangs at warmup WITHOUT flash attention — so
-# the V type is only applied when flash attention is enabled. Override/disable
-# any of these via env (OPENLM_FLASH_ATTN=off turns the whole thing off).
-_FLASH_ATTN = os.environ.get("OPENLM_FLASH_ATTN", "on").strip().lower()
-_CACHE_TYPE_K = os.environ.get("OPENLM_CACHE_TYPE_K", "q8_0").strip()
-_CACHE_TYPE_V = os.environ.get("OPENLM_CACHE_TYPE_V", "q4_0").strip()
+# Flash attention + KV-cache quantization (q8_0 K / q4_0 V) shrink the KV cache,
+# BUT on the Intel Arc (Lunar Lake) Vulkan driver the `-fa on` + q4_0-V path
+# CRASHES llama-server mid-generation once the sequence gets long (~1.6k+ tokens,
+# e.g. the real system prompt): the process dies with no error -> the UI shows a
+# bare ConnectionResetError. Short prompts hid this in earlier testing. So these
+# are OFF by default for stability (plain f16 KV is verified stable on long
+# prompts). Re-enable on a GPU where it's stable via OPENLM_FLASH_ATTN=on (+
+# OPENLM_CACHE_TYPE_K/_V). NOTE: this build needs the value form "-fa on", and
+# quantizing the V cache without flash attention hangs the warmup, so V is only
+# applied when flash attention is on.
+_FLASH_ATTN = os.environ.get("OPENLM_FLASH_ATTN", "off").strip().lower()
+_CACHE_TYPE_K = os.environ.get("OPENLM_CACHE_TYPE_K", "").strip()
+_CACHE_TYPE_V = os.environ.get("OPENLM_CACHE_TYPE_V", "").strip()
 
 
 def _model_args(env_model: str, default_hf: str) -> list[str]:

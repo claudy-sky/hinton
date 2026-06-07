@@ -85,13 +85,18 @@ llama.cpp has no NPU backend (that would need OpenVINO, Intel-only).
   (`failed to fit params ... already set by user to 999`). Pin layers with
   `OPENLM_NGL=<n>` (0 = pure CPU).
 
-### KV-cache quantization
+### KV-cache quantization — OFF by default (Vulkan/Arc instability)
 
-`-fa on --cache-type-k q8_0 --cache-type-v q4_0` (KV cache ~3/8 of f16). Two
-build gotchas, both handled: flash attention needs the value form `-fa on`
-(bare `-fa` swallows the next arg), and quantizing the **V** cache **hangs the
-warmup without flash attention** (so V is only quantized when `-fa` is on).
-Override via `OPENLM_FLASH_ATTN` / `OPENLM_CACHE_TYPE_K` / `OPENLM_CACHE_TYPE_V`.
+`-fa on --cache-type-k q8_0 --cache-type-v q4_0` shrinks the KV cache, but on the
+Intel Arc (Lunar Lake) Vulkan driver it **crashes llama-server mid-generation at
+longer sequence lengths** (~1.6k+ tokens — i.e. the real system prompt): the
+server process dies with no error and the UI shows a bare `ConnectionResetError`.
+Short prompts hid this in earlier testing. So flash-attention + KV-quant are
+**off by default** (`OPENLM_FLASH_ATTN=off`); plain f16 KV is verified stable on
+long prompts. Re-enable on a GPU where it's stable via `OPENLM_FLASH_ATTN=on`
+(+ `OPENLM_CACHE_TYPE_K/_V`). Gotchas if you do: this build needs the value form
+`-fa on` (bare `-fa` swallows the next arg), and quantizing the V cache without
+flash attention hangs the warmup (so V is only applied when `-fa` is on).
 
 ### Speculative decoding (draft) — not usable on the cross-vendor Vulkan build
 
