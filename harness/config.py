@@ -89,17 +89,17 @@ MOCK_LLM = _forced_mock or LLAMA_SERVER_BIN is None
 # --------------------------------------------------------------------------- #
 # Model profile  (spec §6)
 # --------------------------------------------------------------------------- #
-# "gemma"   -> the full, tuned argument vectors for the Gemma 4 QAT + MTP stack
-#              (default; byte-for-byte the historical behaviour).
-# "generic" -> a minimal, portable argument set that works with ANY GGUF on a
-#              prebuilt CPU/Vulkan llama-server.  It deliberately OMITS every
-#              Gemma-specific flag (--swa-full, --kv-unified, the MTP draft,
-#              the QAT -hf repos, exotic cache types) because those break or are
-#              rejected by non-Gemma models / generic prebuilt servers.
-# Frozen/installed app ships a prebuilt CPU llama-server + a plain GGUF, so it
-# defaults to the portable "generic" profile; source checkouts default to "gemma".
-MODEL_PROFILE = os.environ.get(
-    "OPENLM_MODEL_PROFILE", "generic" if FROZEN else "gemma").strip().lower()
+# "generic" -> the portable argument set for the cross-vendor Vulkan (or CPU)
+#              llama-server we ship: -ngl auto, flash attention + q8/q4 KV cache,
+#              no Gemma-only flags. THIS IS THE DEFAULT and the only supported
+#              runtime path.
+# "gemma"    -> legacy tuned vectors (MTP draft, --swa-full, --kv-unified, QAT
+#              -hf repos). These only work on an Intel SYCL+MTP custom build and
+#              are BROKEN on the cross-vendor Vulkan binary (the MTP draft fails
+#              to load, bare -fa is rejected). Opt in with OPENLM_MODEL_PROFILE=gemma
+#              only if you have such a build; the referenced draft GGUFs are no
+#              longer downloaded.
+MODEL_PROFILE = os.environ.get("OPENLM_MODEL_PROFILE", "generic").strip().lower()
 
 # Logical model keys used throughout the harness.
 E4B = "e4b"
