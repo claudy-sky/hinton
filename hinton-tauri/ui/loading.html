@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Hinton</title>
+<style>
+  html, body { height: 100%; margin: 0; background: #0f1011; color: #ececed;
+    font-family: "Space Grotesk", system-ui, sans-serif; }
+  .wrap { height: 100%; display: flex; align-items: center; justify-content: center; }
+  .card { text-align: center; }
+  .dot { width: 14px; height: 14px; border-radius: 5px; margin: 0 auto 16px;
+    background: linear-gradient(135deg, #7c8cff 0%, #45dfa4 130%); }
+  .spinner { width: 40px; height: 40px; border: 3px solid #202126;
+    border-top-color: #7c8cff; border-radius: 50%; margin: 0 auto 16px;
+    animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .title { font-size: 20px; font-weight: 600; }
+  .sub { color: #9a9aa3; font-size: 13px; margin-top: 6px; }
+</style>
+</head>
+<body>
+  <div class="wrap"><div class="card">
+    <div class="spinner"></div>
+    <div class="title">Hinton</div>
+    <div class="sub" id="sub">Starting the local model…</div>
+  </div></div>
+  <script>
+    async function invoke(cmd) {
+      // Tauri v2 exposes the API on window.__TAURI__ (withGlobalTauri).
+      const t = window.__TAURI__;
+      if (t && t.core && t.core.invoke) return t.core.invoke(cmd);
+      if (t && t.invoke) return t.invoke(cmd);
+      throw new Error("Tauri API unavailable");
+    }
+    let tries = 0;
+    async function poll() {
+      try {
+        const url = await invoke("backend_url");
+        if (url) { window.location.replace(url); return; }
+      } catch (e) { /* API not ready yet */ }
+      if (++tries === 25) document.getElementById("sub").textContent =
+        "Loading the model (first launch can take a moment)…";
+      setTimeout(poll, 350);
+    }
+    poll();
+  </script>
+</body>
+</html>

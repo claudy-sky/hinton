@@ -239,22 +239,50 @@ window.OpenLM = window.OpenLM || {};
   O.setStatus = function (html) {
     if (O.curStatusEl) O.curStatusEl.innerHTML = html;
   };
-  window.openlmEvent = function (ev) {
-    if (!ev || !O.curStatusEl) return;
-    const t = ev.type;
-    if (t === "generating") {
-      O.setStatus('<span class="spin-inline"></span>Generating… · ' +
-        ((ev.model || "").toUpperCase()) + (ev.thinking ? " · thinking" : ""));
-    } else if (t === "tool_call") {
-      O.setStatus('<span class="spin-inline"></span>Running tool: ' + ev.name);
-    } else if (t === "escalate") {
-      O.toast("Escalating to 12B");
-      O.setStatus('<span class="spin-inline"></span>Loading 12B…');
-    } else if (t === "descalate") {
-      O.toast("Back to E4B");
-    } else if (t === "compact") {
-      O.setStatus('<span class="spin-inline"></span>Compacting context…');
+
+  // Render a progress snapshot (from get_progress) into the status line so the
+  // user sees live token counts and whether the model is thinking or answering.
+  O.renderProgress = function (p) {
+    if (!p || !O.curStatusEl) return;
+    const spin = '<span class="spin-inline"></span>';
+    const model = (p.model || "").toUpperCase();
+    let label;
+    switch (p.phase) {
+      case "thinking":   label = "Thinking… " + (p.reasoning_tokens || 0) + " tokens"; break;
+      case "generating": label = "Generating… " + (p.tokens || 0) + " tokens"; break;
+      case "tool":       label = "Running tool: " + (p.tool || ""); break;
+      case "escalating": label = "Loading 12B…"; break;
+      case "compacting": label = "Compacting context…"; break;
+      default:           label = "Generating…"; // "starting" / unknown
     }
+    if (model && (p.phase === "thinking" || p.phase === "generating")) label += " · " + model;
+    if (p.thinking && p.phase === "generating") label += " · thinking on";
+    O.setStatus(spin + label);
+  };
+
+  // Poll get_progress while a generation is in flight (covers both the pywebview
+  // and the --serve HTTP transports). Returns a stop function for the caller's
+  // finally block.
+  O.beginProgressPoll = function () {
+    let stopped = false, timer = null;
+    async function tick() {
+      if (stopped) return;
+      try {
+        const p = await O.call("get_progress");
+        if (!stopped && p && p.phase !== "idle") O.renderProgress(p);
+      } catch (e) { /* transient; keep polling */ }
+      if (!stopped) timer = setTimeout(tick, 180);
+    }
+    tick();
+    return function () { stopped = true; if (timer) clearTimeout(timer); };
+  };
+
+  // pywebview can also push events directly; use them only for transient toasts
+  // (the status line itself is driven by the poll above, which works everywhere).
+  window.openlmEvent = function (ev) {
+    if (!ev) return;
+    if (ev.type === "escalate") O.toast("Escalating to 12B");
+    else if (ev.type === "descalate") O.toast("Back to E4B");
   };
 
   // ---- Model status pill ---------------------------------------------- #

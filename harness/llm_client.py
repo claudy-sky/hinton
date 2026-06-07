@@ -12,7 +12,7 @@ import contextlib
 import json
 import urllib.error
 import urllib.request
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 
 class LLMError(RuntimeError):
@@ -27,7 +27,8 @@ def chat(base_url: str, model: str, messages: list[dict], *,
          temperature: float = 0.7,
          timeout: float = 600.0,
          stream: bool = False,
-         cancel_event: Optional["object"] = None) -> dict:
+         cancel_event: Optional["object"] = None,
+         on_token: Optional["Callable[[int, int], None]"] = None) -> dict:
     """Call /v1/chat/completions and return a normalised dict:
 
         {
@@ -97,7 +98,7 @@ def chat(base_url: str, model: str, messages: list[dict], *,
         stopped = bool(cancel_event is not None and cancel_event.is_set())
         return _normalise_completion(body, stopped=stopped)
 
-    return _consume_stream(resp, cancel_event)
+    return _consume_stream(resp, cancel_event, on_token)
 
 
 def _normalise_completion(body: dict, *, stopped: bool) -> dict:
@@ -119,7 +120,7 @@ def _normalise_completion(body: dict, *, stopped: bool) -> dict:
     }
 
 
-def _consume_stream(resp, cancel_event) -> dict:
+def _consume_stream(resp, cancel_event, on_token=None) -> dict:
     """Read an SSE ``/chat/completions`` stream and reconstruct one completion.
 
     Accumulates ``delta.content`` and ``delta.reasoning_content``; rebuilds
@@ -127,6 +128,11 @@ def _consume_stream(resp, cancel_event) -> dict:
     delta of each index, function.arguments string deltas concatenated). Stops
     on ``data: [DONE]`` or when ``cancel_event`` is set (closing the response so
     llama-server releases the slot), reporting ``finish_reason="stopped"``.
+
+    ``on_token(answer_chunks, reasoning_chunks)`` is invoked as deltas arrive so
+    the UI can show a live token count and whether the model is still thinking.
+    Each SSE delta is counted as one unit (close enough to tokens for a progress
+    readout); the call is cheap so it runs on every delta.
     """
     content_parts: list[str] = []
     reasoning_parts: list[str] = []
@@ -134,6 +140,8 @@ def _consume_stream(resp, cancel_event) -> dict:
     finish_reason = "stop"
     usage = {}
     stopped = False
+    n_content = 0
+    n_reasoning = 0
 
     try:
         for raw in resp:
@@ -164,8 +172,16 @@ def _consume_stream(resp, cancel_event) -> dict:
             delta = choice.get("delta") or {}
             if delta.get("content"):
                 content_parts.append(delta["content"])
+                n_content += 1
             if delta.get("reasoning_content"):
                 reasoning_parts.append(delta["reasoning_content"])
+                n_reasoning += 1
+            if on_token is not None and (delta.get("content")
+                                         or delta.get("reasoning_content")):
+                try:
+                    on_token(n_content, n_reasoning)
+                except Exception:  # noqa: BLE001 — progress must never break a stream
+                    pass
 
             for tc in (delta.get("tool_calls") or []):
                 idx = tc.get("index", 0)

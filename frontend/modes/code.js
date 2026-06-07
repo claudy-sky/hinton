@@ -61,6 +61,7 @@ window.OpenLM = window.OpenLM || {};
     O.curStatusEl = el("code-status");
     O.setStatus('<span class="spin-inline"></span>Generating…');
     const revertSend = O.beginSend("code-send");
+    const stopPoll = O.beginProgressPoll();
     try {
       const res = await O.call("send_message", convId, text, "code", false);
       O.appendMessage(thread, res.message);
@@ -68,8 +69,9 @@ window.OpenLM = window.OpenLM || {};
       const code = extractCode(res.message.content);
       if (code && S.cm) S.cm.setValue(code);
     } catch (e) {
-      O.appendMessage(thread, { role: "assistant", content: "⚠️ Error: " + e.message });
+      O.appendMessage(thread, { role: "assistant", content: "Error: " + e.message });
     } finally {
+      stopPoll();
       O.setStatus(""); revertSend();
       O.refreshStatus(); load();
     }

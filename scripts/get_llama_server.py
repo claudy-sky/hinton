@@ -65,10 +65,12 @@ def _http_get(url: str, timeout: float = 60.0) -> bytes:
         return r.read()
 
 
-def _pick_server_asset(assets: list[dict]) -> str | None:
+def _pick_server_asset(assets: list[dict], prefer: str = "vulkan") -> str | None:
     """Choose the best Windows x64 server zip from a release's asset list.
 
-    Preference order: CPU x64 build, then Vulkan x64, then any win x64 zip.
+    Default preference: the **Vulkan** x64 build — one binary that GPU-accelerates
+    on Intel, AMD AND NVIDIA GPUs (CUDA=NVIDIA-only, ROCm=AMD-only, SYCL=Intel-only).
+    Falls back to a CPU build, then any win-x64 zip.  Pass prefer="cpu" to force CPU.
     """
     names = [(a.get("name", ""), a.get("browser_download_url", "")) for a in assets]
 
@@ -79,13 +81,14 @@ def _pick_server_asset(assets: list[dict]) -> str | None:
                 return url
         return None
 
-    return (match(lambda n: "cpu" in n and "x64" in n)
-            or match(lambda n: "vulkan" in n and "x64" in n)
+    primary, secondary = ("vulkan", "cpu") if prefer != "cpu" else ("cpu", "vulkan")
+    return (match(lambda n: primary in n and "x64" in n)
+            or match(lambda n: secondary in n and "x64" in n)
             or match(lambda n: "x64" in n)
             or match(lambda n: True))
 
 
-def download_server() -> bool:
+def download_server(prefer: str = "vulkan") -> bool:
     """Download + unzip a prebuilt llama-server.exe into bin/.  Returns True on success."""
     if os.path.exists(SERVER_EXE):
         print(f"  skip llama-server.exe (exists at {SERVER_EXE})")
@@ -99,7 +102,7 @@ def download_server() -> bool:
         return False
 
     tag = rel.get("tag_name", "?")
-    url = _pick_server_asset(rel.get("assets", []) or [])
+    url = _pick_server_asset(rel.get("assets", []) or [], prefer)
     if not url:
         print(f"  FAIL: no suitable win-x64 zip in release {tag}")
         print(f"     -> manual: {ASSET_FALLBACK_HINT}")
@@ -204,6 +207,8 @@ def main() -> int:
                     help="only download the llama-server binary")
     ap.add_argument("--model-only", action="store_true",
                     help="only download the small GGUF model")
+    ap.add_argument("--cpu", action="store_true",
+                    help="download the CPU build instead of the cross-vendor Vulkan build")
     args = ap.parse_args()
 
     _ensure_dirs()
@@ -215,7 +220,7 @@ def main() -> int:
     model_path = None
     ok = True
     if not args.model_only:
-        ok = download_server() and ok
+        ok = download_server(prefer="cpu" if args.cpu else "vulkan") and ok
     if not args.server_only:
         model_path = download_model(args.model)
         ok = (model_path is not None) and ok

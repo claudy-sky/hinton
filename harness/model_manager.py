@@ -94,12 +94,33 @@ class ModelManager:
                 self._start_real_locked(model_key)
             self.active = model_key
             self._last_activity = time.time()
+            if not config.MOCK_LLM:
+                self._warmup()
 
     def escalate(self) -> None:
         self.acquire(config.B12)
 
     def descalate(self) -> None:
         self.acquire(config.E4B)
+
+    def _warmup(self) -> None:
+        """Fire a 1-token generation in the background so the GPU backend
+        compiles its shaders now (a one-time ~10-15 s cost on first Vulkan run)
+        instead of stalling the user's first real message."""
+        port = self._port
+        if port is None:
+            return
+        base = f"http://{config.SERVER_HOST}:{port}/v1"
+
+        def run():
+            try:
+                from . import llm_client
+                llm_client.chat(base, self.model_name(),
+                                [{"role": "user", "content": "hi"}],
+                                max_tokens=1, timeout=180)
+            except Exception:
+                pass
+        threading.Thread(target=run, daemon=True, name="warmup").start()
 
     def release_all(self) -> None:
         """Unload every model (used before SDXL image generation, spec §17)."""

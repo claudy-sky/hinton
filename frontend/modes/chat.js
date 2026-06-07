@@ -121,14 +121,16 @@ window.OpenLM = window.OpenLM || {};
     O.curStatusEl = el("chat-status");
     O.setStatus('<span class="spin-inline"></span>Generating…');
     const revertSend = O.beginSend("chat-send");
+    const stopPoll = O.beginProgressPoll();
 
     try {
       const res = await O.call("send_message", convId, text, "chat", S.thinking);
       O.appendMessage(thread, res.message);
       if (res.stopped) O.toast("Stopped");
     } catch (e) {
-      O.appendMessage(thread, { role: "assistant", content: "⚠️ Error: " + e.message });
+      O.appendMessage(thread, { role: "assistant", content: "Error: " + e.message });
     } finally {
+      stopPoll();
       O.setStatus(""); revertSend();
       O.refreshStatus(); load();
     }

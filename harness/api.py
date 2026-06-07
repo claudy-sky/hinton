@@ -109,6 +109,16 @@ def _to_openai(rows: list[dict]) -> list[dict]:
 class Api:
     def __init__(self) -> None:
         self.window = None  # set by main after window creation
+        # Live generation progress, polled by the UI via get_progress(). Works in
+        # both transports (pywebview push and the --serve HTTP server), so the
+        # status line can show a running token count and the thinking phase
+        # instead of a static "Generating…".
+        self._progress = self._idle_progress()
+
+    @staticmethod
+    def _idle_progress() -> dict:
+        return {"phase": "idle", "model": None, "thinking": False,
+                "tokens": 0, "reasoning_tokens": 0, "tool": None}
 
     # ------------------------------------------------------------------ #
     # Status / model control
@@ -119,6 +129,10 @@ class Api:
                 "ctx": config.CTX,
                 "b12_available": config.B12_AVAILABLE,
                 "e4b_available": config.E4B_AVAILABLE}
+
+    def get_progress(self) -> dict:
+        """Snapshot of the in-flight generation for the live status readout."""
+        return dict(self._progress)
 
     def set_model(self, model_key: str) -> dict:
         """Manual escalation / descalation (spec §5.1)."""
@@ -325,6 +339,9 @@ class Api:
 
         tool_names = [] if mode == "code" else None  # code runs client-side
         ev = manager.new_cancel()
+        self._progress = {"phase": "starting", "model": manager.active,
+                          "thinking": bool(thinking), "tokens": 0,
+                          "reasoning_tokens": 0, "tool": None}
         try:
             result = run_agent(messages, thinking=thinking, tool_names=tool_names,
                                on_event=self._push_event, cancel_event=ev)
@@ -342,6 +359,7 @@ class Api:
                 result = again
         finally:
             manager.clear_cancel()
+            self._progress = self._idle_progress()
 
         # Persist intermediate tool turns, then the final answer.
         for m in result["new_messages"]:
@@ -601,6 +619,12 @@ class Api:
             db.rename_conversation(conv_id, title)
 
     def _push_event(self, event: dict) -> None:
+        # Keep the polled progress snapshot current for every event (works in
+        # both transports). Token deltas only update the snapshot — they are far
+        # too frequent to forward to pywebview one by one.
+        self._update_progress(event)
+        if event.get("type") == "token":
+            return
         if self.window is None:
             return
         try:
@@ -608,3 +632,30 @@ class Api:
             self.window.evaluate_js(f"window.openlmEvent && window.openlmEvent({payload})")
         except Exception:  # noqa: BLE001
             pass
+
+    def _update_progress(self, event: dict) -> None:
+        t = event.get("type")
+        p = self._progress
+        if t == "generating":
+            p.update(phase="thinking" if event.get("thinking") else "generating",
+                     model=event.get("model"), thinking=bool(event.get("thinking")),
+                     tokens=0, reasoning_tokens=0, tool=None)
+        elif t == "token":
+            n = int(event.get("n", 0))
+            rn = int(event.get("reasoning_n", 0))
+            p["tokens"] = n
+            p["reasoning_tokens"] = rn
+            p["model"] = event.get("model", p.get("model"))
+            # Once answer tokens start flowing, we've left the thinking phase.
+            p["phase"] = "generating" if n > 0 else (
+                "thinking" if rn > 0 else p.get("phase", "generating"))
+        elif t == "tool_call":
+            p.update(phase="tool", tool=event.get("name"))
+        elif t == "tool_result":
+            p.update(phase="generating", tool=None)
+        elif t == "escalate":
+            p.update(phase="escalating", tool=None)
+        elif t == "descalate":
+            p.update(phase="generating")
+        elif t == "compact":
+            p.update(phase="compacting")

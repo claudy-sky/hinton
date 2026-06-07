@@ -19,6 +19,9 @@ venv/
 *.zip
 # Throwaway verification scripts
 scripts/_*.py
+# Rust / Tauri build output
+/hinton-tauri/src-tauri/target/
+/hinton-tauri/src-tauri/gen/
 # OS / editor
 .DS_Store
 Thumbs.db

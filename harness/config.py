@@ -137,9 +137,35 @@ def _resolve_model_source(env_var: str, filename: str,
         return ["-hf", default_hf], True
     return ["-hf", _GEMMA_12B_HF], False
 
-# Default CPU thread counts (overridable via env for generic prebuilt servers).
-_THREADS = os.environ.get("OPENLM_THREADS", "4")
-_THREADS_BATCH = os.environ.get("OPENLM_THREADS_BATCH", "8")
+# Default CPU thread counts. Use *every* logical core by default so the CPU is
+# fully utilised for the work that isn't offloaded to the GPU (sampling, prompt
+# tokenisation, and any layers the GPU can't hold). Overridable via env.
+_CPU_COUNT = os.cpu_count() or 4
+_THREADS = os.environ.get("OPENLM_THREADS", str(_CPU_COUNT))
+_THREADS_BATCH = os.environ.get("OPENLM_THREADS_BATCH", str(_CPU_COUNT))
+
+# GPU offload. Default "auto": omit -ngl so llama.cpp's fit-to-memory logic
+# places as many layers on the GPU as fit (~8 GB device-local on this Lunar Lake
+# iGPU) and keeps the rest in CPU/system RAM — i.e. it uses the FULL 16 GB of
+# unified memory. A model that fits (E4B, ~5 GB) lands entirely on the GPU and
+# runs at full speed; a model that doesn't (12B q4, ~7 GB + KV/compute > 8 GB)
+# is split GPU+CPU and still runs (~12 tok/s) instead of aborting. NOTE: forcing
+# a value here is a footgun — `-ngl 999` makes llama.cpp ABORT for the 12B
+# ("failed to fit params ... n_gpu_layers already set by user to 999"). Set
+# OPENLM_NGL to a number to pin layers (0 = pure CPU), or leave "auto".
+_NGL = os.environ.get("OPENLM_NGL", "auto").strip()
+
+# KV-cache quantization (q8_0 K / q4_0 V) shrinks the KV cache to ~3/8 of f16,
+# leaving more VRAM for context. It REQUIRES flash attention. Both are verified
+# to load fast (~9 s) and generate correctly on the bundled cross-vendor Vulkan
+# server (Intel/AMD/NVIDIA); flash attention is also fine on a pure-CPU build.
+# NOTE: this build needs the value form "-fa on" (bare "-fa" swallows the next
+# arg) and quantizing the V cache hangs at warmup WITHOUT flash attention — so
+# the V type is only applied when flash attention is enabled. Override/disable
+# any of these via env (OPENLM_FLASH_ATTN=off turns the whole thing off).
+_FLASH_ATTN = os.environ.get("OPENLM_FLASH_ATTN", "on").strip().lower()
+_CACHE_TYPE_K = os.environ.get("OPENLM_CACHE_TYPE_K", "q8_0").strip()
+_CACHE_TYPE_V = os.environ.get("OPENLM_CACHE_TYPE_V", "q4_0").strip()
 
 
 def _model_args(env_model: str, default_hf: str) -> list[str]:
@@ -185,6 +211,22 @@ def _generic_args(*, model_args: list[str], draft: str) -> list[str]:
     """
     args = list(model_args)
     args += ["-c", str(CTX), "--jinja"]
+    # GPU offload: omit -ngl when "auto" so llama.cpp distributes layers across
+    # GPU + CPU (uses all 16 GB unified memory; required for the 12B to load).
+    if _NGL and _NGL.lower() != "auto":
+        args += ["-ngl", _NGL]
+    # Flash attention + KV-cache quantization (see _FLASH_ATTN notes above). The
+    # V cache type is only added when flash attention is on, since q4_0/q8_0 V
+    # without flash attention stalls the warmup.
+    if _FLASH_ATTN and _FLASH_ATTN != "off":
+        args += ["-fa", _FLASH_ATTN]
+        if _CACHE_TYPE_K:
+            args += ["--cache-type-k", _CACHE_TYPE_K]
+        if _CACHE_TYPE_V:
+            args += ["--cache-type-v", _CACHE_TYPE_V]
+    elif _CACHE_TYPE_K:
+        # K can be quantized without flash attention; V cannot.
+        args += ["--cache-type-k", _CACHE_TYPE_K]
     args += ["--threads", _THREADS, "--threads-batch", _THREADS_BATCH]
     draft_path = (draft or "").strip()
     if draft_path:

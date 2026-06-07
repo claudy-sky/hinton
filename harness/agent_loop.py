@@ -120,11 +120,16 @@ def run_agent(messages: list[dict], *,
                 tools.append(DESCALATE_TOOL)
 
         _emit(on_event, type="generating", model=manager.active, thinking=cur_thinking)
+
+        def _on_token(n_content: int, n_reasoning: int) -> None:
+            _emit(on_event, type="token", n=n_content, reasoning_n=n_reasoning,
+                  model=manager.active, thinking=cur_thinking)
+
         with manager.generating(cur_thinking):
             resp = llm_client.chat(
                 manager.active_base_url(), manager.model_name(), messages,
                 tools=tools or None, thinking=cur_thinking, max_tokens=max_tokens,
-                stream=True, cancel_event=cancel_event)
+                stream=True, cancel_event=cancel_event, on_token=_on_token)
 
         u = resp["usage"]
         for k in usage_total:

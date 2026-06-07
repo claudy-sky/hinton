@@ -1,61 +1,83 @@
 # Packaging Hinton (Windows)
 
-## Why a ZIP, not an installer .exe
+Hinton ships as a **Tauri desktop app**. The native WebView2 window
+(`hinton-tauri`) launches the Python backend as a sidecar
+(`python -m harness.main --serve`) and loads its local URL. The frozen
+PyInstaller build and the offline ZIP distribution were **removed** — Tauri is
+the only supported packaging.
 
-Hinton ships the Gemma 4 **E4B** model (~4.9 GB) inside the app so it runs the
-real model offline from first launch. **Windows cannot execute a `.exe` larger
-than ~4 GB** (`CreateProcess` → `ERROR_BAD_EXE_FORMAT`), and every installer
-tool hits the same wall — Inno Setup refuses (`Disk spanning must be enabled
-... larger than 4200000000 bytes`), and a 7‑Zip SFX builds but won't run. So the
-model can't live in a runnable installer exe. Distribution is therefore a **ZIP**.
-
-## Artifacts
-
-| File | Size | What the user does |
-|------|------|--------------------|
-| `Hinton-Full.zip` | ~5 GB | Extract → run `Hinton\Hinton.exe`. Real Gemma 4 E4B runs locally, fully offline, **zero config**. |
-| `Hinton-12B-Plugin.zip` | ~6.5 GB | Extract → run `12B 모델 설치.cmd` (drops the 12B model into `%LOCALAPPDATA%\Hinton\models`) → restart Hinton to enable 12B escalation. |
-
-`Hinton-Full.zip` also contains `README.txt` and `바로가기 만들기.cmd` (creates
-Desktop + Start Menu shortcuts to the extracted `Hinton.exe`).
-
-## Build
+## Build / run
 
 ```powershell
-# Prereqs: pip install pyinstaller ; winget install 7zip.7zip
-#          models present: scripts\get_gemma.py --size e4b  (and --size g4-12b for the plugin)
-.\scripts\build_zip.ps1            # PyInstaller build (dist\Hinton) + both ZIPs
-.\scripts\build_zip.ps1 -SkipBuild # re-zip an existing dist\Hinton only
+# Prereqs: Rust toolchain (cargo), Python 3.11/3.12, WebView2 runtime (preinstalled on Win11),
+#          models in models\ (scripts\get_gemma.py) and bin\llama-server.exe (scripts\get_llama_server.py).
+cd hinton-tauri\src-tauri
+cargo build --release          # -> target\release\hinton.exe
+# or a full installer (NSIS/MSI):
+cargo tauri build
 ```
 
-`build_zip.ps1` calls `build_app.ps1` (PyInstaller, spec `packaging\hinton.spec`)
-then stores `dist\Hinton` + the helper files into the ZIPs (`-mx0`, no
-compression — the GGUF is already-compressed weights).
+Run the built app: `hinton-tauri\src-tauri\target\release\hinton.exe`.
 
-## How the frozen app finds things (see `harness/config.py`)
+## How the Tauri shell works (`hinton-tauri/src-tauri/src/main.rs`)
 
-* `FROZEN` is true under PyInstaller → `ROOT_DIR = sys._MEIPASS` (the bundle).
-* Bundled, read‑only: `ROOT_DIR/bin/llama-server.exe`,
-  `ROOT_DIR/models/gemma-4-E4B_q4_0-it.gguf`, `ROOT_DIR/frontend`, `ROOT_DIR/plugins`.
-* Writable user data: `%LOCALAPPDATA%\Hinton` (`data\`, `models\`). The 12B
-  plugin drops its weights into `%LOCALAPPDATA%\Hinton\models`; config resolves
-  it there and enables escalation, else escalation stays disabled.
-* Frozen default model profile is `generic` (the bundled prebuilt CPU
-  llama-server + a plain GGUF); source checkouts default to `gemma`.
+* Resolves the repo root (env `HINTON_ROOT`, else walks up from the exe).
+* Spawns `python -m harness.main --serve --port <free>` as a child, with env
+  `OPENLM_MODEL_PROFILE=generic`, `OPENLM_LLAMA_SERVER=bin\llama-server.exe`,
+  `OPENLM_E4B_MODEL=models\gemma-4-E4B_q4_0-it.gguf` (so it runs the real model
+  with no manual setup), `CREATE_NO_WINDOW` so no console flashes.
+* `loading.html` polls the `backend_url` command, then navigates the window to
+  the backend once it is up. On window close, the child backend is killed.
+* Because the backend is the live `harness` source, edits take effect on the
+  next launch (no rebuild of Python needed; only `cargo build` for Rust changes).
 
-## Verified
+## GPU acceleration (cross-vendor, verified on Vulkan b9548)
 
-The bundled `dist\Hinton\Hinton.exe`, launched with **no environment variables**,
-reports `active=e4b mock=False` and answers from the real Gemma 4 E4B — i.e.
-extract-and-run gives the real model with zero configuration, fully offline.
+The bundled `bin/llama-server.exe` is the **Vulkan** build (ships
+`ggml-vulkan.dll`) — one binary GPU-accelerates on **Intel, AMD and NVIDIA**
+(CUDA=NVIDIA-only, ROCm=AMD-only, SYCL=Intel-only). NPUs are not used —
+llama.cpp has no NPU backend (that would need OpenVINO, Intel-only).
 
-## Dev run (no packaging)
+### Memory / GPU offload (`config._generic_args`)
+
+* **Auto-fit (`OPENLM_NGL=auto`, default):** `-ngl` is omitted so llama.cpp
+  places as many layers as fit on the GPU (~8 GB device-local on Lunar Lake)
+  and keeps the rest in CPU/system RAM — using the full **16 GB unified
+  memory**. E4B (~5 GB) lands entirely on the GPU (~24 tok/s); the 12B q4
+  (~7 GB + KV/compute > 8 GB) is split GPU+CPU and runs (~12 tok/s) instead of
+  aborting. NOTE: forcing `-ngl 999` makes llama.cpp **abort** for the 12B
+  (`failed to fit params ... already set by user to 999`). Pin layers with
+  `OPENLM_NGL=<n>` (0 = pure CPU).
+
+### KV-cache quantization
+
+`-fa on --cache-type-k q8_0 --cache-type-v q4_0` (KV cache ~3/8 of f16). Two
+build gotchas, both handled: flash attention needs the value form `-fa on`
+(bare `-fa` swallows the next arg), and quantizing the **V** cache **hangs the
+warmup without flash attention** (so V is only quantized when `-fa` is on).
+Override via `OPENLM_FLASH_ATTN` / `OPENLM_CACHE_TYPE_K` / `OPENLM_CACHE_TYPE_V`.
+
+### Speculative decoding (draft) — not usable on the cross-vendor Vulkan build
+
+Both draft approaches were tested and rejected:
+* **MTP assistant** (`--spec-type draft-mtp`): the official Gemma-4 assistant
+  heads are architecture `gemma4_mtp`, which mainline llama.cpp does **not**
+  implement (`unknown model architecture: 'gemma4_mtp'`); other conversions load
+  as plain `gemma4` and report `model doesn't contain MTP layers`. MTP only
+  works on the Intel SYCL+MTP / ik-llama forks.
+* **E2B as a plain draft** (`--spec-type draft-simple`): E4B + E2B exceed the
+  8 GB GPU (crash), and a 2B→4B ratio gives little speedup even on CPU.
+
+So no draft is wired by default. The draft GGUFs in `models/` are unused on this
+runtime.
+
+## Dev run (no Tauri)
 
 ```powershell
 $env:OPENLM_MOCK="1"; python -m harness.main --serve   # browser, mock model
 # real model from a source checkout:
 $env:OPENLM_MODEL_PROFILE="generic"
-$env:OPENLM_E4B_MODEL="...\models\gemma-4-E4B_q4_0-it.gguf"
 $env:OPENLM_LLAMA_SERVER="...\bin\llama-server.exe"
-python -m harness.main            # pywebview window
+$env:OPENLM_E4B_MODEL="...\models\gemma-4-E4B_q4_0-it.gguf"
+python -m harness.main --serve
 ```
