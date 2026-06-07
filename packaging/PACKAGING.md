@@ -1,35 +1,55 @@
 # Packaging Hinton (Windows)
 
-Hinton ships as a **Tauri desktop app**. The native WebView2 window
-(`hinton-tauri`) launches the Python backend as a sidecar
-(`python -m harness.main --serve`) and loads its local URL. The frozen
-PyInstaller build and the offline ZIP distribution were **removed** — Tauri is
-the only supported packaging.
+Hinton ships as a **standalone Tauri desktop app** with **no system-Python
+dependency**: the native WebView2 window (`hinton-tauri`) launches an **embedded
+Python** runtime to run the `harness` backend (`python -m harness.main --serve`)
+and loads its local URL. The frozen PyInstaller build and the offline ZIP
+distribution were **removed** — Tauri is the only supported packaging.
+
+The backend core is **stdlib-only**, so the official Windows *embeddable* Python
+(interpreter + full stdlib, ~25 MB) is all that's bundled; the user never installs
+Python. Optional heavy plugins (torch/weasyprint, doc-gen, embeddings) are not
+required to run.
 
 ## Build / run
 
 ```powershell
-# Prereqs: Rust toolchain (cargo), Python 3.11/3.12, WebView2 runtime (preinstalled on Win11),
-#          models in models\ (scripts\get_gemma.py) and bin\llama-server.exe (scripts\get_llama_server.py).
+# Prereqs (developer machine): Rust toolchain (cargo), a Python to run the
+# fetch scripts, WebView2 runtime (preinstalled on Win11).
+python scripts\get_python.py          # -> python-embed\  (embeddable runtime; gitignored)
+python scripts\get_llama_server.py    # -> bin\llama-server.exe (+ ggml-vulkan.dll)
+python scripts\get_gemma.py --size e4b      # -> models\  (resident model)
+python scripts\get_gemma.py --size g4-12b   # (optional) 12B escalation
+
 cd hinton-tauri\src-tauri
-cargo build --release          # -> target\release\hinton.exe
-# or a full installer (NSIS/MSI):
-cargo tauri build
+cargo build --release                 # dev exe -> target\release\hinton.exe
+cargo tauri build                     # standalone NSIS installer (bundles
+                                      #   python-embed/ harness/ frontend/ bin/ plugins/)
 ```
 
-Run the built app: `hinton-tauri\src-tauri\target\release\hinton.exe`.
+Run the dev build: `hinton-tauri\src-tauri\target\release\hinton.exe`.
+
+> **Model distribution:** `models/` is NOT bundled in the installer (the GGUFs are
+> 5–7 GB each; NSIS large-file limits + size). Ship the model alongside or fetch
+> it on first run into `%LOCALAPPDATA%\OpenLM\models`. Everything *else* needed to
+> run is inside the installer, so the app itself is self-contained.
 
 ## How the Tauri shell works (`hinton-tauri/src-tauri/src/main.rs`)
 
-* Resolves the repo root (env `HINTON_ROOT`, else walks up from the exe).
-* Spawns `python -m harness.main --serve --port <free>` as a child, with env
+* **Root resolution** (`repo_root`): `HINTON_ROOT` env → Tauri `resource_dir()`
+  (installed app, where `bundle.resources` places `harness/`, `python-embed/`,
+  `bin/`, ...) → repo root (dev, walking up from the exe).
+* **Python** (`python_exe`): prefers the bundled `python-embed\python.exe`
+  (sibling of `harness/`); falls back to a `python` on PATH only if the bundle is
+  absent (bare source clone). The embeddable interpreter resolves `import harness`
+  via its `pythonNNN._pth` (which adds `..`, the dir that holds `harness/`).
+* Spawns `python -m harness.main --serve --port <free>` with env
   `OPENLM_MODEL_PROFILE=generic`, `OPENLM_LLAMA_SERVER=bin\llama-server.exe`,
-  `OPENLM_E4B_MODEL=models\gemma-4-E4B_q4_0-it.gguf` (so it runs the real model
-  with no manual setup), `CREATE_NO_WINDOW` so no console flashes.
+  `OPENLM_E4B_MODEL=models\...gguf`, `CREATE_NO_WINDOW` (no console flash).
 * `loading.html` polls the `backend_url` command, then navigates the window to
   the backend once it is up. On window close, the child backend is killed.
-* Because the backend is the live `harness` source, edits take effect on the
-  next launch (no rebuild of Python needed; only `cargo build` for Rust changes).
+* Verified: the rebuilt `hinton.exe` spawns `python-embed\python.exe` (not system
+  Python) and drives the real E4B (`mock=False`) end to end.
 
 ## GPU acceleration (cross-vendor, verified on Vulkan b9548)
 
