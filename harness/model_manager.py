@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import socket
 import subprocess
 import threading
 import time
@@ -23,6 +24,25 @@ import urllib.request
 
 from . import config
 from .mock_llm import start_mock_server
+
+
+def _free_port(preferred: int) -> int:
+    """Return ``preferred`` if it can be bound, else an OS-assigned free port.
+
+    Makes the model server resilient to its default port already being in use
+    (a second app instance, a lingering process, or another program) instead of
+    failing to start — which the UI would otherwise surface as "not responding".
+    """
+    for candidate in (preferred, 0):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            s.bind((config.SERVER_HOST, candidate))
+            return s.getsockname()[1]
+        except OSError:
+            continue
+        finally:
+            s.close()
+    return preferred
 
 
 class ModelManager:
@@ -40,6 +60,9 @@ class ModelManager:
         # (set by stop_generation; consumed by llm_client.chat). Thread-safe via
         # the same re-entrant lock that serialises model lifecycle.
         self._cancel_event: threading.Event | None = None
+        # Actual port the active model server bound to (may differ from the
+        # configured default when that port was already taken).
+        self._port: int | None = None
 
     # ------------------------------------------------------------------ #
     # Lifecycle
@@ -100,21 +123,25 @@ class ModelManager:
             with contextlib.suppress(Exception):
                 self._mock_httpd.shutdown()
             self._mock_httpd = None
+        self._port = None
 
     def _start_mock_locked(self, model_key: str) -> None:
-        port = config.port_for(model_key)
+        port = _free_port(config.port_for(model_key))
         self._mock_httpd = start_mock_server(config.SERVER_HOST, port)
+        self._port = port
         self._wait_ready(port, timeout=5)
 
     def _start_real_locked(self, model_key: str) -> None:
         spec = config.SERVERS[model_key]
+        port = _free_port(spec["port"])
         args = [config.LLAMA_SERVER_BIN, *spec["args"],
-                "--host", config.SERVER_HOST, "--port", str(spec["port"])]
+                "--host", config.SERVER_HOST, "--port", str(port)]
         env = {**os.environ, **config.SYCL_ENV}
         self._proc = subprocess.Popen(
             args, env=env,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        self._wait_ready(spec["port"], timeout=600)
+        self._port = port
+        self._wait_ready(port, timeout=600)
 
     def _wait_ready(self, port: int, timeout: float) -> None:
         url = f"http://{config.SERVER_HOST}:{port}/health"
@@ -186,9 +213,9 @@ class ModelManager:
     # Introspection
     # ------------------------------------------------------------------ #
     def active_base_url(self) -> str:
-        if self.active is None:
+        if self.active is None or self._port is None:
             raise RuntimeError("no model is currently loaded")
-        return config.base_url(self.active)
+        return f"http://{config.SERVER_HOST}:{self._port}/v1"
 
     def model_name(self) -> str:
         return "gemma-4-mock" if config.MOCK_LLM else "gemma-4"

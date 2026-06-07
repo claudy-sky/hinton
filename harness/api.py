@@ -116,11 +116,16 @@ class Api:
     def get_status(self) -> dict:
         return {**manager.status(),
                 "tools": registry.names(),
-                "ctx": config.CTX}
+                "ctx": config.CTX,
+                "b12_available": config.B12_AVAILABLE,
+                "e4b_available": config.E4B_AVAILABLE}
 
     def set_model(self, model_key: str) -> dict:
         """Manual escalation / descalation (spec §5.1)."""
         if model_key == config.B12:
+            if not config.B12_AVAILABLE:
+                return {**manager.status(),
+                        "error": "12B model is not installed — install the 12B plugin."}
             manager.escalate()
         elif model_key == config.E4B:
             manager.descalate()
@@ -325,9 +330,9 @@ class Api:
                                on_event=self._push_event, cancel_event=ev)
 
             # Turn cap with no answer on E4B -> escalate once (spec §7.1).
-            # Skip the retry if the user explicitly cancelled.
+            # Skip the retry if the user cancelled or 12B isn't installed.
             if (result["content"] is None and not result.get("stopped")
-                    and manager.active == config.E4B):
+                    and manager.active == config.E4B and config.B12_AVAILABLE):
                 self._push_event({"type": "escalate", "reason": "turn cap"})
                 manager.escalate()
                 again = run_agent(messages, thinking=True, tool_names=tool_names,

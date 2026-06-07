@@ -484,8 +484,16 @@ window.OpenLM = window.OpenLM || {};
     document.getElementById("model-pill").addEventListener("click", async () => {
       const s = O.state.status;
       const target = s.active === "12b" ? "e4b" : "12b";
+      if (target === "12b" && s.b12_available === false) {
+        O.toast("12B model isn't installed — install the 12B plugin.");
+        return;
+      }
       O.toast(target === "12b" ? "Switching to 12B…" : "Switching to E4B…");
-      try { updatePill(await O.call("set_model", target)); } catch (e) { O.toast("Switch failed: " + e.message); }
+      try {
+        const r = await O.call("set_model", target);
+        if (r && r.error) { O.toast(r.error); return; }
+        updatePill(r);
+      } catch (e) { O.toast("Switch failed: " + e.message); }
     });
     // Settings
     document.getElementById("settings-btn").addEventListener("click", openSettings);

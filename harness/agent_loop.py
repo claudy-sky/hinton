@@ -112,7 +112,9 @@ def run_agent(messages: list[dict], *,
         # --- assemble advertised tools ---
         tools = list(registry.schemas(tool_names))
         if allow_escalation:
-            if manager.active == config.E4B:
+            # Only offer escalation when the 12B model is actually installed
+            # (it ships as a separate plugin, not in the base app).
+            if manager.active == config.E4B and config.B12_AVAILABLE:
                 tools.append(ESCALATE_TOOL)
             elif manager.active == config.B12:
                 tools.append(DESCALATE_TOOL)

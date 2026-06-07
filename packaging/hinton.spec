@@ -47,6 +47,11 @@ PLUGINS_DIR = PROJECT_ROOT / "plugins"
 datas = [
     (str(FRONTEND_DIR), "frontend"),
     (str(PLUGINS_DIR), "plugins"),
+    # Bundle the prebuilt llama-server (+ DLLs) and the resident E4B model so the
+    # installed app runs the REAL model out of the box — no separate download or
+    # PATH/env setup. (The 12B model ships as a separate plugin installer.)
+    (str(PROJECT_ROOT / "bin"), "bin"),
+    (str(PROJECT_ROOT / "models" / "gemma-4-E4B_q4_0-it.gguf"), "models"),
 ]
 
 # --------------------------------------------------------------------------- #

@@ -74,7 +74,12 @@ EMBED_DIM = 384
 # --------------------------------------------------------------------------- #
 # Binaries
 # --------------------------------------------------------------------------- #
-LLAMA_SERVER_BIN = os.environ.get("OPENLM_LLAMA_SERVER") or shutil.which("llama-server")
+# In the frozen app, llama-server ships under <bundle>/bin so the installed app
+# runs the real model with no separate install or PATH setup.
+_BUNDLED_SERVER = ROOT_DIR / "bin" / "llama-server.exe"
+LLAMA_SERVER_BIN = (os.environ.get("OPENLM_LLAMA_SERVER")
+                    or shutil.which("llama-server")
+                    or (str(_BUNDLED_SERVER) if _BUNDLED_SERVER.exists() else None))
 FFMPEG_BIN = os.environ.get("OPENLM_FFMPEG") or shutil.which("ffmpeg")
 
 # Mock mode: forced via env, or implied when no real llama-server is available.
@@ -91,7 +96,10 @@ MOCK_LLM = _forced_mock or LLAMA_SERVER_BIN is None
 #              Gemma-specific flag (--swa-full, --kv-unified, the MTP draft,
 #              the QAT -hf repos, exotic cache types) because those break or are
 #              rejected by non-Gemma models / generic prebuilt servers.
-MODEL_PROFILE = os.environ.get("OPENLM_MODEL_PROFILE", "gemma").strip().lower()
+# Frozen/installed app ships a prebuilt CPU llama-server + a plain GGUF, so it
+# defaults to the portable "generic" profile; source checkouts default to "gemma".
+MODEL_PROFILE = os.environ.get(
+    "OPENLM_MODEL_PROFILE", "generic" if FROZEN else "gemma").strip().lower()
 
 # Logical model keys used throughout the harness.
 E4B = "e4b"
@@ -102,6 +110,32 @@ _GEMMA_E4B_HF = "google/gemma-4-e4b-it-qat-q4_0-gguf"
 _GEMMA_12B_HF = "google/gemma-4-12b-it-qat-q4_0-gguf"
 _GEMMA_E4B_DRAFT = str(MODELS_DIR / "gemma-4-e4b-mtp-assistant.gguf")
 _GEMMA_12B_DRAFT = str(MODELS_DIR / "gemma-4-12B-it-MTP-Q8_0.gguf")
+
+# E4B ships bundled with the frozen app (under <bundle>/models); the optional
+# 12B "plugin" drops its weights into MODELS_DIR (%LOCALAPPDATA%\Hinton\models).
+_BUNDLED_MODELS = ROOT_DIR / "models"
+_E4B_FILE = "gemma-4-E4B_q4_0-it.gguf"
+_B12_FILE = "gemma-4-12b-it-qat-q4_0.gguf"
+
+
+def _resolve_model_source(env_var: str, filename: str,
+                          default_hf: str | None) -> tuple[list[str], bool]:
+    """Resolve a model to llama-server model args with precedence:
+    env override > bundled gguf > downloaded gguf (MODELS_DIR) > default HF id.
+
+    Returns (args, available). ``available`` is False only when nothing is found
+    and ``default_hf`` is None — i.e. the optional 12B plugin isn't installed.
+    """
+    v = (os.environ.get(env_var, "") or "").strip()
+    if v:
+        return _model_args(v, default_hf or v), True
+    for base in (_BUNDLED_MODELS, MODELS_DIR):
+        p = base / filename
+        if p.exists():
+            return ["-m", str(p)], True
+    if default_hf:
+        return ["-hf", default_hf], True
+    return ["-hf", _GEMMA_12B_HF], False
 
 # Default CPU thread counts (overridable via env for generic prebuilt servers).
 _THREADS = os.environ.get("OPENLM_THREADS", "4")
@@ -158,14 +192,21 @@ def _generic_args(*, model_args: list[str], draft: str) -> list[str]:
     return args
 
 
+E4B_AVAILABLE = True
+B12_AVAILABLE = True
+
+
 def _build_servers() -> dict:
     """Construct the SERVERS table programmatically from profile + env.
 
     model_manager consumes ``SERVERS[key]`` with the same shape it always had:
     ``{"port": int, "label": str, "args": [str, ...]}``.
     """
-    e4b_model = _model_args(os.environ.get("OPENLM_E4B_MODEL", ""), _GEMMA_E4B_HF)
-    b12_model = _model_args(os.environ.get("OPENLM_12B_MODEL", ""), _GEMMA_12B_HF)
+    global E4B_AVAILABLE, B12_AVAILABLE
+    e4b_model, E4B_AVAILABLE = _resolve_model_source(
+        "OPENLM_E4B_MODEL", _E4B_FILE, _GEMMA_E4B_HF)
+    b12_model, B12_AVAILABLE = _resolve_model_source(
+        "OPENLM_12B_MODEL", _B12_FILE, None if FROZEN else _GEMMA_12B_HF)
     e4b_draft = os.environ.get("OPENLM_E4B_DRAFT", "")
     b12_draft = os.environ.get("OPENLM_12B_DRAFT", "")
 
